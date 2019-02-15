@@ -1,3 +1,5 @@
+// Very much inspired by / taken from https://www.creativebloq.com/javascript/create-interactive-liquid-metal-ball-webgl-4126370
+
 import * as THREE from 'three';
 
 // Sphere texture images
@@ -25,7 +27,8 @@ const CAMERA_ORBIT_TARGET = 0.0025;
 const GROUND_SCALE = 0.025;
 const DEPTH = 600;
 const ORIGIN = new THREE.Vector3();
-const DISPLACEMENT = 0.4;
+const DISPLACEMENT = 0.6;
+const DISPLACEMENT_MIN = 0.1;
 const SPRING_STRENGTH = 0.0003;
 const DAMPEN = 0.998;
 
@@ -43,6 +46,11 @@ let cameraOrbit = 0;
 let currentOrbitSpeed = CAMERA_ORBIT_START;
 let groundScale = 1;
 let sphereHeightScalar = 0;
+let currentDisplacement = 0;
+
+// AUDIO SHIT
+let analyser = null;
+let currentVolume = 0;
 
 function updateVertexSprings() {
   let sphereVertices = sphere.geometry.vertices,
@@ -111,13 +119,21 @@ function displaceRandomFace() {
   let sphereFaces = sphere.geometry.faces;
   let randomFaceIndex = Math.floor(Math.random() * sphereFaces.length);
   let randomFace = sphereFaces[randomFaceIndex];
-  let displacement = Math.random() * (DISPLACEMENT - 0) + 0;
-  displaceFace(randomFace, -displacement);
+  let displacement = currentDisplacement;
+  displaceFace(randomFace, -Math.max(DISPLACEMENT_MIN, displacement));
 
-  setTimeout(displaceRandomFace, 50);
+  setTimeout(displaceRandomFace, 25);
 }
 
 function animate() {
+  if (!!analyser) {
+    var array =  new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(array);
+    var average = getAverageVolume(array);
+    currentVolume = average;
+    currentDisplacement = (currentVolume / 80) * DISPLACEMENT;
+  }
+
   updateVertexSprings();
   // move the camera around slightly
   // sin + cos = a circle
@@ -259,7 +275,47 @@ function createLights() {
   scene.add(lightBottom);
 }
 
+//Audio stuff
+function getAverageVolume(array) {
+  var values = 0;
+  var average;
+  var length = array.length;
+
+  // get all the frequency amplitudes
+  for (var i = 0; i < length; i++) {
+    values += array[i];
+  }
+
+  average = values / length;
+  return average;
+}
+
+function onStreamSuccess(stream) {
+  const context = new (window.AudioContext || window.webkitAudioContext);
+  const input = context.createMediaStreamSource(stream);
+
+  analyser = context.createAnalyser();
+  analyser.smoothingTimeConstant = 0.3;
+  analyser.fftSize = 1024;
+  input.connect(analyser);
+}
+
+function onStreamFailed(error) {
+  console.warn(error);
+}
+
+function initAudio() {
+  navigator.getUserMedia = (navigator.getUserMedia ||
+                            navigator.webkitGetUserMedia ||
+                            navigator.mozGetUserMedia ||
+                            navigator.msGetUserMedia);
+
+  navigator.getUserMedia({audio: true}, (s) => onStreamSuccess(s), (e) => onStreamFailed(e));
+}
+
 function init() {
+  initAudio();
+
   const body = document.getElementsByTagName('body')[0];
   body.style.margin = 0;
   body.style.overflow = 'hidden';
@@ -293,5 +349,6 @@ function init() {
     requestAnimationFrame(animate);
   }, 200);
 }
+
 
 init();
